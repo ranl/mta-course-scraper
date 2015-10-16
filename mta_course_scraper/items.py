@@ -72,6 +72,7 @@ class Course(MtaCourseScraperItem):
     id = scrapy.Field()
     name = scrapy.Field()
     year = scrapy.Field()
+    comment = scrapy.Field()
 
 
 class Group(MtaCourseScraperItem):

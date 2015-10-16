@@ -39,7 +39,7 @@ class CourseSpiderSpider(scrapy.Spider):
     extract_course_view_args = re.compile(
         'prgname=S_SHOW_PROGS&arguments=-N(?P<year>\d+),-N(?P<prog>\d+)')
     extract_group_args = re.compile(
-        '.+?,\'-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+)')
+        '-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+)')
 
     def __init__(self, faculty=None, track=None, year=2016, *args, **kwargs):
         """
@@ -77,7 +77,7 @@ class CourseSpiderSpider(scrapy.Spider):
             faculty = Faculty()
             faculty['id'] = int(opt.xpath('@value').extract()[0])
             faculty['name'] = opt.xpath('text()').extract()[0]
-            self.logger.info('Faculty: id={}, name={}'.format(
+            self.logger.debug('Faculty: id={}, name={}'.format(
                 faculty['id'], faculty['name'].encode('utf8')))
 
             if faculty and faculty['id'] != self.faculty:
@@ -112,6 +112,11 @@ class CourseSpiderSpider(scrapy.Spider):
             track['name'] = trk['Name']
             track['faculty_id'] = response.meta['faculty']['id']
             track['year'] = self.year
+            self.logger.debug('Track: id={}, name={}'.format(
+                track['id'], track['name'].encode('utf8')))
+
+            if self.track and track['id'] != self.track:
+                continue
 
             request = scrapy.FormRequest(
                 self.media_net_endpoint,
@@ -186,9 +191,9 @@ class CourseSpiderSpider(scrapy.Spider):
                 course['comment'] = comment.xpath('text()').extract()[0].strip()
             except IndexError:
                 pass
-            course['year'] = response.meta['track']['year']
-            course['faculty_id'] = response.meta['track']['faculty_id']
-            course['track_id'] = response.meta['track']['id']
+            course['year'] = response.meta['program']['year']
+            course['faculty_id'] = response.meta['program']['faculty_id']
+            course['track_id'] = response.meta['program']['track_id']
             course['program_id'] = response.meta['program']['id']
 
             request = scrapy.FormRequest(
@@ -236,6 +241,9 @@ class CourseSpiderSpider(scrapy.Spider):
         """
         Parse the group for a given course
         """
+
+        # from scrapy.shell import inspect_response
+        # inspect_response(response, self)
 
         group = Group()
         tds = response.xpath('//table[@class="text"]/tr/td')
