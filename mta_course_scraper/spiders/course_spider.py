@@ -97,20 +97,6 @@ class CourseSpiderSpider(scrapy.Spider):
             yield request
             yield faculty
 
-
-            # request = scrapy.FormRequest(
-            #     self.media_net_endpoint,
-            #     callback=self.parse_faculty,
-            #     method='POST',
-            #     formdata={
-            #         'PRGNAME': 'S_MASLUL',
-            #         'ARGUMENTS': self.faculty_arg,
-            #         self.faculty_arg: str(faculty['id']),
-            #     },
-            # )
-            # request.meta['faculty'] = faculty
-            # yield request
-
     def parse_faculty(self, response):
         """
         Parse the JSON Faculty iteration
