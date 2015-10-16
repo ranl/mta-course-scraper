@@ -12,10 +12,10 @@ class MtaCourseScraperItem(scrapy.Item):
     pass
 
 
-class Misgeret(MtaCourseScraperItem):
+class Faculty(MtaCourseScraperItem):
 
     """
-    A "Misgeret"
+    A Faculty
     for example:
         - Computer Science 1st Degree
         - Certificate Studies
@@ -26,34 +26,70 @@ class Misgeret(MtaCourseScraperItem):
     name = scrapy.Field()
 
 
-class Maslul(MtaCourseScraperItem):
+class Track(MtaCourseScraperItem):
 
     """
-    A "Maslul"
+    A Track in a specific faculty
     for example:
         - Computer Science - Internet and Network
         - Computer Science - General
         - etc ...
     """
 
-    misgeret_id = scrapy.Field()
+    faculty_id = scrapy.Field()
     id = scrapy.Field()
     name = scrapy.Field()
     year = scrapy.Field()
 
 
-class Prog(MtaCourseScraperItem):
+class Program(MtaCourseScraperItem):
 
     """
-    A "Program"
+    A Program in a track
     for example:
         - Mandatory Courses A
         - Mandatory Courses B
         - etc ...
     """
 
-    misgeret_id = scrapy.Field()
-    maslul_id = scrapy.Field()
+    faculty_id = scrapy.Field()
+    track_id = scrapy.Field()
     id = scrapy.Field()
     name = scrapy.Field()
     year = scrapy.Field()
+    comment = scrapy.Field()
+
+
+class Course(MtaCourseScraperItem):
+
+    """
+    A Course in a given program
+    """
+
+    faculty_id = scrapy.Field()
+    track_id = scrapy.Field()
+    program_id = scrapy.Field()
+    id = scrapy.Field()
+    name = scrapy.Field()
+    year = scrapy.Field()
+
+
+class Group(MtaCourseScraperItem):
+
+    """
+    A Group for a given course
+    """
+
+    faculty_id = scrapy.Field()
+    track_id = scrapy.Field()
+    program_id = scrapy.Field()
+    course_id = scrapy.Field()
+    id = scrapy.Field()
+    name = scrapy.Field()
+    year = scrapy.Field()
+    type = scrapy.Field()
+    points = scrapy.Field()
+    hours = scrapy.Field()
+    lecturer = scrapy.Field()
+    exams = scrapy.Field()
+    syllabus = scrapy.Field()
