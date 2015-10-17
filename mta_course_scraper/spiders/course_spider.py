@@ -41,6 +41,10 @@ class CourseSpiderSpider(scrapy.Spider):
     extract_group_args = re.compile(
         '-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+)')
 
+    # Tables
+    dependencies_table = u'\u05ea\u05e0\u05d0\u05d9 \u05e7\u05d3\u05dd \u05dc\u05e0\u05d5\u05e9\u05d0'
+    schedule_table = u'\u05de\u05e2\u05e8\u05db\u05ea \u05e9\u05e2\u05d5\u05ea'
+
     def __init__(self, faculty=None, track=None, year=2016, *args, **kwargs):
         """
         Init function
@@ -242,12 +246,14 @@ class CourseSpiderSpider(scrapy.Spider):
         Parse the group for a given course
         """
 
-        # from scrapy.shell import inspect_response
-        # inspect_response(response, self)
-
         group = Group()
         tds = response.xpath('//table[@class="text"]/tr/td')
-        group['points'] = float(tds[4].xpath('text()').extract()[0].split(':', 1)[1])
+        points = tds[4].xpath('text()').extract()[0].split(':', 1)[1].strip()
+        if points:
+            group['points'] = float(tds[4].xpath('text()').extract()[0].split(':', 1)[1])
+        else:
+            # Could be possible than a group will have 0 points (tirgul, english ...)
+            group['points'] = float(0)
         group['hours'] = float(tds[5].xpath('text()').extract()[0].split(':', 1)[1])
         group['lecturer'] = tds[6].xpath('text()').extract()[0].split(':', 1)[1].strip()
         group['id'] = int(tds[7].xpath('text()').extract()[0].split(':', 1)[1])
@@ -258,9 +264,60 @@ class CourseSpiderSpider(scrapy.Spider):
         if tds[8].xpath('./b'):
             i += 1
             group['exams'] = []
-            for date in tds[8].xpath('text()').extract()[2:]:
+            for date in tds[i].xpath('text()').extract()[2:]:
                 dmy, t = date.split()[4:6]
                 group['exams'].push({
                     'date': dmy,
                     'time': t,
                 })
+
+        def parse_schedule(table):
+            trs = table.xpath('.//tr')
+            trs.pop(0)
+            group['classes'] = []
+            for tr in trs:
+                semester, day, start_time, end_time, _, _ = tr.xpath('.//td')
+                group['classes'].append({
+                    'semester': semester.xpath('text()').extract()[0].strip(),
+                    'day': day.xpath('text()').extract()[0].strip(),
+                    'start_time': start_time.xpath('text()').extract()[0].strip(),
+                    'end_time': end_time.xpath('text()').extract()[0].strip(),
+                })
+
+        def parse_dependencies(table):
+            trs = table.xpath('.//tr')
+            trs.pop(0)
+            group['dependencies'] = []
+            for tr in trs:
+                dep_type, affected_students, course, _ = tr.xpath('.//td')
+                group['dependencies'].append({
+                    'dep_type': dep_type.xpath('text()').extract()[0].strip(),
+                    'affected_students': affected_students.xpath('text()').extract()[0].strip(),
+                    'course': course.xpath('text()').extract()[0].strip(),
+                })
+
+        def parse_sibling_courses(table):
+            trs = table.xpath('.//tr')
+            trs.pop(0)
+            group['siblings'] = []
+            for tr in trs:
+                course_id, course_name, course_type, schedule, lecturer, link = tr.xpath('.//td')
+                group['siblings'].append({
+                    'course_id': course_id.xpath('text()').extract()[0].strip(),
+                    'course_name': course_name.xpath('text()').extract()[0].strip(),
+                    'course_type': course_type.xpath('text()').extract()[0].strip(),
+                    'schedule': schedule.xpath('text()').extract()[0].strip(),
+                    'lecturer': lecturer.xpath('text()').extract()[0].strip(),
+                    'link': link.xpath('./a/@href').extract()[0].strip(),
+                })
+
+        for table in response.xpath('//table[contains(@id, "myTable")]'):
+            table_name = table.xpath('../div/h2/text()').extract()[0].strip()
+            if table_name == self.schedule_table:
+                parse_schedule(table)
+            elif table_name == self.dependencies_table:
+                parse_dependencies(table)
+            else:
+                parse_sibling_courses(table)
+
+        yield group

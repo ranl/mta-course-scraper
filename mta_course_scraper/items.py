@@ -93,4 +93,6 @@ class Group(MtaCourseScraperItem):
     hours = scrapy.Field()
     lecturer = scrapy.Field()
     exams = scrapy.Field()
-    syllabus = scrapy.Field()
+    classes = scrapy.Field()
+    dependencies = scrapy.Field()
+    siblings = scrapy.Field()
