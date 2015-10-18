@@ -10,6 +10,8 @@ inspect_response(response, self)
 import scrapy
 import json
 import re
+import traceback
+from collections import defaultdict
 
 from mta_course_scraper.items import (
     Faculty,
@@ -19,7 +21,30 @@ from mta_course_scraper.items import (
     Group,
 )
 
-# TODO: Add try/catch when parsing new object to not fail the entire loop
+
+class SpiderErrorDetector(object):
+
+    def __init__(self):
+        def _entry():
+            return {'error': 0, 'total': 0}
+        self._stats = defaultdict(_entry)
+
+    def add_error(self, key):
+        self._stats[key]['error'] += 1
+        self._stats[key]['total'] += 1
+
+    def add_success(self, key):
+        self._stats[key]['total'] += 1
+
+    def calc_ratio(self):
+        for key, stats in self._stats.iteritems():
+            if stats['total'] == 0:
+                stats['error_ratio'] = float(0)
+            else:
+                stats['error_ratio'] = stats['error'] / float(stats['total'])
+
+    def __repr__(self):
+        return json.dumps(self._stats, indent=4)
 
 
 class CourseSpiderSpider(scrapy.Spider):
@@ -41,7 +66,7 @@ class CourseSpiderSpider(scrapy.Spider):
     extract_group_args = re.compile(
         '-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+),\s*-N\s*(\d+)')
 
-    # Tables
+    # Group Tables
     dependencies_table = u'\u05ea\u05e0\u05d0\u05d9 \u05e7\u05d3\u05dd \u05dc\u05e0\u05d5\u05e9\u05d0'
     schedule_table = u'\u05de\u05e2\u05e8\u05db\u05ea \u05e9\u05e2\u05d5\u05ea'
 
@@ -62,6 +87,14 @@ class CourseSpiderSpider(scrapy.Spider):
             self.year = int(year)
         else:
             self.year = None
+        self.stats = SpiderErrorDetector()
+
+    def closed(self, reason):
+        """
+        Print out the stats dict
+        """
+        self.stats.calc_ratio()
+        self.logger.info(self.stats)
 
     def parse(self, response):
         """
@@ -71,18 +104,20 @@ class CourseSpiderSpider(scrapy.Spider):
         'https://rishum.mta.ac.il/yedion/fireflyweb.aspx
         """
 
-        # from scrapy.shell import inspect_response
-        # inspect_response(response, self)
-
         options = response.xpath('//select[@name="{0}"]//option'.format(
             self.faculty_arg
         ))
         for opt in options:
             faculty = Faculty()
-            faculty['id'] = int(opt.xpath('@value').extract()[0])
-            faculty['name'] = opt.xpath('text()').extract()[0]
-            self.logger.debug('Faculty: id={}, name={}'.format(
-                faculty['id'], faculty['name'].encode('utf8')))
+            try:
+                faculty['id'] = int(opt.xpath('@value').extract()[0])
+                faculty['name'] = opt.xpath('text()').extract()[0]
+            except Exception:
+                self.stats.add_error(Faculty.__name__)
+                self.logger.error(traceback.format_exc())
+                continue
+            else:
+                self.stats.add_success(Faculty.__name__)
 
             if faculty and faculty['id'] != self.faculty:
                 continue
@@ -106,18 +141,21 @@ class CourseSpiderSpider(scrapy.Spider):
         Parse the JSON Faculty iteration
         """
 
-        # from scrapy.shell import inspect_response
-        # inspect_response(response, self)
-
         json_response = json.loads(response.body)['Answer']
         for trk in json_response:
             track = Track()
-            track['id'] = int(trk['Code'])
-            track['name'] = trk['Name']
+            try:
+                track['id'] = int(trk['Code'])
+                track['name'] = trk['Name']
+            except Exception:
+                self.stats.add_error(Track.__name__)
+                self.logger.error(traceback.format_exc())
+                continue
+            else:
+                self.stats.add_success(Track.__name__)
+
             track['faculty_id'] = response.meta['faculty']['id']
             track['year'] = self.year
-            self.logger.debug('Track: id={}, name={}'.format(
-                track['id'], track['name'].encode('utf8')))
 
             if self.track and track['id'] != self.track:
                 continue
@@ -155,16 +193,24 @@ class CourseSpiderSpider(scrapy.Spider):
         trs = response.xpath('//table[@id="myTable0"]/tr')
         trs.pop(0)
         for tr in trs:
-            name, search, comment = tr.xpath('.//td')
-            query_string = search.xpath('./a/@href').extract()[0].split('?', 1)[1]
-            args = self.extract_course_view_args.match(query_string)
             prog = Program()
-            prog['name'] = name.xpath('text()').extract()[0].strip()
-            prog['id'] = args.groupdict()['prog']
             try:
-                prog['comment'] = comment.xpath('text()').extract()[0].strip()
-            except IndexError:
-                pass
+                name, search, comment = tr.xpath('.//td')
+                query_string = search.xpath('./a/@href').extract()[0].split('?', 1)[1]
+                args = self.extract_course_view_args.match(query_string)
+                prog['name'] = name.xpath('text()').extract()[0].strip()
+                prog['id'] = args.groupdict()['prog']
+                try:
+                    prog['comment'] = comment.xpath('text()').extract()[0].strip()
+                except IndexError:
+                    prog['comment'] = ''
+            except Exception:
+                self.stats.add_error(Program.__name__)
+                self.logger.error(traceback.format_exc())
+                continue
+            else:
+                self.stats.add_success(Program.__name__)
+
             prog['year'] = response.meta['track']['year']
             prog['faculty_id'] = response.meta['track']['faculty_id']
             prog['track_id'] = response.meta['track']['id']
@@ -187,14 +233,22 @@ class CourseSpiderSpider(scrapy.Spider):
         """
 
         for tr in response.xpath('//table[@id="myTable0"]/tbody//tr'):
-            course_id, course_name, _, button, comment = tr.xpath('.//td')
             course = Course()
-            course['id'] = course_id.xpath('text()').extract()[0].strip()
-            course['name'] = course_name.xpath('text()').extract()[0].strip()
             try:
-                course['comment'] = comment.xpath('text()').extract()[0].strip()
-            except IndexError:
-                pass
+                course_id, course_name, _, button, comment = tr.xpath('.//td')
+                course['id'] = course_id.xpath('text()').extract()[0].strip()
+                course['name'] = course_name.xpath('text()').extract()[0].strip()
+                try:
+                    course['comment'] = comment.xpath('text()').extract()[0].strip()
+                except IndexError:
+                    course['comment'] = ''
+            except Exception:
+                self.stats.add_error(Course.__name__)
+                self.logger.error(traceback.format_exc())
+                continue
+            else:
+                self.stats.add_success(Course.__name__)
+
             course['year'] = response.meta['program']['year']
             course['faculty_id'] = response.meta['program']['faculty_id']
             course['track_id'] = response.meta['program']['track_id']
@@ -224,11 +278,19 @@ class CourseSpiderSpider(scrapy.Spider):
         """
 
         for button in response.xpath('//input[@name="B2"]'):
-            js_func = button.xpath('@onclick').extract()[0]
-            js_args = js_func.split('\'')[5]
-            args = ','.join(map(
-                lambda x: '-N' + x,
-                self.extract_group_args.match(js_args).groups()))
+            try:
+                js_func = button.xpath('@onclick').extract()[0]
+                js_args = js_func.split('\'')[5]
+                args = ','.join(map(
+                    lambda x: '-N' + x,
+                    self.extract_group_args.match(js_args).groups()))
+            except Exception:
+                self.stats.add_error('CourseIter')
+                self.logger.error(traceback.format_exc())
+                continue
+            else:
+                self.stats.add_success('CourseIter')
+
             request = scrapy.FormRequest(
                 self.media_net_endpoint,
                 callback=self.parse_course_iter,
@@ -247,29 +309,12 @@ class CourseSpiderSpider(scrapy.Spider):
         """
 
         group = Group()
-        tds = response.xpath('//table[@class="text"]/tr/td')
-        points = tds[4].xpath('text()').extract()[0].split(':', 1)[1].strip()
-        if points:
-            group['points'] = float(tds[4].xpath('text()').extract()[0].split(':', 1)[1])
-        else:
-            # Could be possible than a group will have 0 points (tirgul, english ...)
-            group['points'] = float(0)
-        group['hours'] = float(tds[5].xpath('text()').extract()[0].split(':', 1)[1])
-        group['lecturer'] = tds[6].xpath('text()').extract()[0].split(':', 1)[1].strip()
-        group['id'] = int(tds[7].xpath('text()').extract()[0].split(':', 1)[1])
 
-        # If we have the <b> tag then we have exams dates
-        # some groups can have zero exams
-        i = 8
-        if tds[8].xpath('./b'):
-            i += 1
-            group['exams'] = []
-            for date in tds[i].xpath('text()').extract()[2:]:
-                dmy, t = date.split()[4:6]
-                group['exams'].push({
-                    'date': dmy,
-                    'time': t,
-                })
+        def get_float(td, miss_value=0):
+            try:
+                return float(td.xpath('text()').extract()[0].split(':', 1)[1])
+            except ValueError:
+                return float(miss_value)
 
         def parse_schedule(table):
             trs = table.xpath('.//tr')
@@ -311,13 +356,39 @@ class CourseSpiderSpider(scrapy.Spider):
                     'link': link.xpath('./a/@href').extract()[0].strip(),
                 })
 
-        for table in response.xpath('//table[contains(@id, "myTable")]'):
-            table_name = table.xpath('../div/h2/text()').extract()[0].strip()
-            if table_name == self.schedule_table:
-                parse_schedule(table)
-            elif table_name == self.dependencies_table:
-                parse_dependencies(table)
-            else:
-                parse_sibling_courses(table)
+        try:
+            tds = response.xpath('//table[@class="text"]/tr/td')
+            group['points'] = get_float(tds[4])
+            group['hours'] = get_float(tds[5])
+            group['lecturer'] = tds[6].xpath('text()').extract()[0].split(':', 1)[1].strip()
+            group['id'] = int(tds[7].xpath('text()').extract()[0].split(':', 1)[1])
+
+            # If we have the <b> tag then we have exams dates
+            # some groups can have zero exams
+            i = 8
+            if tds[8].xpath('./b'):
+                i += 1
+                group['exams'] = []
+                for date in tds[i].xpath('text()').extract()[2:]:
+                    dmy, t = date.split()[4:6]
+                    group['exams'].append({
+                        'date': dmy,
+                        'time': t,
+                    })
+
+            for table in response.xpath('//table[contains(@id, "myTable")]'):
+                table_name = table.xpath('../div/h2/text()').extract()[0].strip()
+                if table_name == self.schedule_table:
+                    parse_schedule(table)
+                elif table_name == self.dependencies_table:
+                    parse_dependencies(table)
+                else:
+                    parse_sibling_courses(table)
+        except Exception:
+            self.stats.add_error(Group.__name__)
+            self.logger.error(traceback.format_exc())
+            return
+        else:
+            self.stats.add_success(Group.__name__)
 
         yield group

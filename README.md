@@ -15,3 +15,9 @@ scrapy installation - http://doc.scrapy.org/en/latest/intro/install.html
 sudo apt-get install python-pip python-lxml libffi-dev
 sudo pip install scrapy==1.0.3
 ```
+
+# Examples
+get all the courses from Computer Science - Internet and Networking Specialty  
+```
+time scrapy crawl -o /tmp/data_from_crawler.json -t jsonlines -a faculty=11 -a track=1141 --loglevel=ERROR course_spider
+```

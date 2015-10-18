@@ -9,7 +9,8 @@ import scrapy
 
 
 class MtaCourseScraperItem(scrapy.Item):
-    pass
+
+    item_type = scrapy.Field()
 
 
 class Faculty(MtaCourseScraperItem):
